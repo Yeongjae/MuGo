@@ -1,39 +1,28 @@
 '''
-Neural network architecture.
+The neural network architecture is some mix of AlphaGo's input features and
+Cazenave's resnet architecture.
 
-(From the AlphaGo paper)
-The input to the policy network is a 19 x 19 x 48 image stack consisting of
-48 feature planes. The first hidden layer zero pads the input into a 23 x 23
-image, then convolves k filters of kernel size 5 x 5 with stride 1 with the
-input image and applies a rectifier nonlinearity. Each of the subsequent
-hidden layers 2 to 12 zero pads the respective previous hidden layer into a
-21 x 21 image, then convolves k filters of kernel size 3 x 3 with stride 1,
-again followed by a rectifier nonlinearity. The final layer convolves 1 filter
-of kernel size 1 x 1 with stride 1, with a different bias for each position,
-and applies a softmax function.
+See features.py for a list of input features used. All colors are flipped so
+that it is always "black to play". Thus, the same policy is used to estimate
+both white and black moves. However, in the case of the value network, the
+value of komi, or whose turn to play, must also be passed in, because there
+is an asymmetry between black and white there.
 
-The input to the value network is also a 19 x 19 x 48 image stack, with an
-additional binary feature plane describing the current colour to play.
-Hidden layers 2 to 11 are identical to the policy network, hidden layer 12
-is an additional convolution layer, hidden layer 13 convolves 1 filter of
-kernel size 1 x 1 with stride 1, and hidden layer 14 is a fully connected
-linear layer with 256 rectifier units. The output layer is a fully connected
-linear layer with a single tanh unit.
+The policy and value networks share a majority of their architecture.
+This helps the intermediate layers extract concepts that are relevant to both 
+move prediction and score estimation.
 
-(From the Cazenave resnet policy paper)
-The input layer of our Go networks is also residual. It uses a 5 × 5
-convolutional layer in parallel to a 1 × 1 convolutional layer and adds the
-outputs of the two layers before the ReLU layer. It is depicted in figure 3.
+Within the DNN, the layer width is configurable, but 128 is a good compromise
+between network size and compute time. All layers use ReLu nonlinearities and
+zero-padding for convolutions.
 
-The output layer of the network is a 3 × 3 convolutional layer with one output
-plane followed by a SoftMax. All the hidden layers use 256 feature planes and
-3 × 3 filters.
-
-We define the number of layers of a network as the number of convolutional
-layers. So a 28 layers network has 28 convolutional layers corresponding to 14
-layers depicted in figure 2.
-
+The policy and value networks can be evaluated independently or together;
+if executed together, the shared part of the network only needs to be computed
+once. When training, you must either alternate training both halves, or freeze
+the shared part of the network, or else the half that isn't being trained will
+start producing inaccurate outputs.
 '''
+
 import math
 import os
 import sys
@@ -64,11 +53,12 @@ class PolicyNetwork(object):
     def set_up_network(self):
         # a global_step variable allows epoch counts to persist through multiple training sessions
         global_step = tf.Variable(0, name="global_step", trainable=False)
+        RL_global_step = tf.Variable(0, name="RL_global_step", trainable=False)
         x = tf.placeholder(tf.float32, [None, go.N, go.N, self.num_input_planes])
         y = tf.placeholder(tf.float32, shape=[None, go.N ** 2])
         # whether this example should be positively or negatively reinforced.
         # Set to 1 for positive, -1 for negative.
-        reinforce = tf.placeholder(tf.float32, shape=[])
+        reinforce_direction = tf.placeholder(tf.float32, shape=[])
 
         #convenience functions for initializing weights and biases
         def _weight_variable(shape, name):
@@ -111,7 +101,7 @@ class PolicyNetwork(object):
         output = tf.nn.softmax(tf.reshape(h_conv_final, [-1, go.N ** 2]) + b_conv_final)
         logits = tf.reshape(h_conv_final, [-1, go.N ** 2]) + b_conv_final
 
-        log_likelihood_cost = reinforce * tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=y))
+        log_likelihood_cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=y))
 
         # AdamOptimizer is faster at start but gets really spiky after 2-3 million steps.
         # train_step = tf.train.AdamOptimizer(1e-4).minimize(log_likelihood_cost, global_step=global_step)
@@ -119,6 +109,9 @@ class PolicyNetwork(object):
         train_step = tf.train.GradientDescentOptimizer(learning_rate).minimize(log_likelihood_cost, global_step=global_step)
         was_correct = tf.equal(tf.argmax(logits, 1), tf.argmax(y, 1))
         accuracy = tf.reduce_mean(tf.cast(was_correct, tf.float32))
+
+        reinforce_step = tf.train.GradientDescentOptimizer(1e-2).minimize(
+            log_likelihood_cost * reinforce_direction, global_step=RL_global_step)
 
         weight_summaries = tf.summary.merge([
             tf.summary.histogram(weight_var.name, weight_var)
@@ -160,7 +153,7 @@ class PolicyNetwork(object):
             batch_x, batch_y = training_data.get_batch(batch_size)
             _, accuracy, cost = self.session.run(
                 [self.train_step, self.accuracy, self.log_likelihood_cost],
-                feed_dict={self.x: batch_x, self.y: batch_y, self.reinforce: 1})
+                feed_dict={self.x: batch_x, self.y: batch_y, self.reinforce_direction: 1})
             self.training_stats.report(accuracy, cost)
 
         avg_accuracy, avg_cost, accuracy_summaries = self.training_stats.collect()
@@ -169,9 +162,17 @@ class PolicyNetwork(object):
         if self.training_summary_writer is not None:
             activation_summaries = self.session.run(
                 self.activation_summaries,
-                feed_dict={self.x: batch_x, self.y: batch_y, self.reinforce: 1})
+                feed_dict={self.x: batch_x, self.y: batch_y, self.reinforce_direction: 1})
             self.training_summary_writer.add_summary(activation_summaries, global_step)
             self.training_summary_writer.add_summary(accuracy_summaries, global_step)
+
+    def reinforce(self, dataset, direction=1, batch_size=32):
+        num_minibatches = dataset.data_size // batch_size
+        for i in range(num_minibatches):
+            batch_x, batch_y = dataset.get_batch(batch_size)
+            self.session.run(
+                self.reinforce_step,
+                feed_dict={self.x: batch_x, self.y: batch_y, self.reinforce_direction: direction})
 
     def run(self, position):
         'Return a sorted list of (probability, move) tuples'
@@ -192,7 +193,7 @@ class PolicyNetwork(object):
             batch_x, batch_y = test_data.get_batch(batch_size)
             accuracy, cost = self.session.run(
                 [self.accuracy, self.log_likelihood_cost],
-                feed_dict={self.x: batch_x, self.y: batch_y, self.reinforce: 1})
+                feed_dict={self.x: batch_x, self.y: batch_y, self.reinforce_direction: 1})
             self.test_stats.report(accuracy, cost)
 
         avg_accuracy, avg_cost, accuracy_summaries = self.test_stats.collect()

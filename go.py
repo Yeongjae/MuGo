@@ -184,7 +184,7 @@ class LibertyTracker():
 
         # suicide is illegal
         if len(new_group.liberties) == 0:
-            raise IllegalMove
+            raise IllegalMove("Move at {} would commit suicide!\n".format(c))
 
         return captured_stones
 
@@ -351,7 +351,7 @@ class Position():
             return pos
 
         if not self.is_move_legal(c):
-            raise IllegalMove()
+            raise IllegalMove("Move at {} is illegal: \n{}".format(c, self))
 
         place_stones(pos.board, color, [c])
         captured_stones = pos.lib_tracker.add_stone(color, c)

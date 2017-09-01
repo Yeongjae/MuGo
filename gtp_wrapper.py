@@ -65,6 +65,9 @@ class GtpInterface(object):
         # Pass if the opponent passes
         return position.n > 100 and position.recent and position.recent[-1].move == None
 
+    def get_score(self):
+        return self.position.result()
+
     def suggest_move(self, position):
         raise NotImplementedError
 
