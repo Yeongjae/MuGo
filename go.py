@@ -135,7 +135,7 @@ class LibertyTracker():
         # group_index: a NxN numpy array of group_ids. -1 means no group
         # groups: a dict of group_id to groups
         # liberty_cache: a NxN numpy array of liberty counts
-        self.group_index = group_index if group_index is not None else -np.ones([N, N], dtype=np.int16)
+        self.group_index = group_index if group_index is not None else -np.ones([N, N], dtype=np.int32)
         self.groups = groups or {}
         self.liberty_cache = liberty_cache if liberty_cache is not None else np.zeros([N, N], dtype=np.uint8)
         self.max_group_id = max_group_id
