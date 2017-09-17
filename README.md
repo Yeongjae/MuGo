@@ -23,7 +23,7 @@ Optionally, you can install TensorFlow with GPU support, if you intend on traini
 Play against MuGo
 =================
 
-If you just want to get MuGo working, you can download a pretrained network from [Releases](https://github.com/brilee/MuGo/releases). You will have to be sure to match the code version with the version specified in the release, or else the neural network configuration may not line up correctly - `git checkout v0.1`, replace with version as appropriate.
+If you just want to get MuGo working, you can download a pretrained network from [Releases](https://github.com/brilee/MuGo/releases). You will have to be sure to match the code version with the version specified in the release, or else the neural network configuration may not line up correctly, and you'll get errors like "tensorflow.python.framework.errors_impl.NotFoundError: Key not found in checkpoint". So if the release is v0.1, then run `git checkout v0.1`.
 
 MuGo uses the GTP protocol, and you can use any gtp-compliant program with it. To invoke the raw policy network, use
 ```
