@@ -482,6 +482,58 @@ class TestPosition(GoPositionTestCase):
         )
         self.assertEqualPositions(ko_delayed_retake, expected_position)
 
+    def test_ko_move_mutable_board(self):
+        start_board = load_board('''
+            .OX......
+            OX.......
+        ''' + EMPTY_ROW * 7)
+        start_position = Position(
+            board=start_board,
+            n=0,
+            komi=6.5,
+            caps=(1, 2),
+            ko=None,
+            recent=tuple(),
+            to_play=BLACK,
+        )
+        expected_board = load_board('''
+            X.X......
+            OX.......
+        ''' + EMPTY_ROW * 7)
+        expected_position = Position(
+            board=expected_board,
+            n=1,
+            komi=6.5,
+            caps=(2, 2),
+            ko=pc('B9'),
+            recent=(PlayerMove(BLACK, pc('A9')),),
+            to_play=WHITE,
+        )
+        actual_position = start_position.play_move(pc('A9'), mutate=True)
+
+        self.assertEqualPositions(actual_position, expected_position)
+
+        # Check that retaking ko is illegal until two intervening moves
+        with self.assertRaises(go.IllegalMove):
+            actual_position.play_move(pc('B9'), mutate=True)
+        pass_twice = actual_position.pass_move(mutate=True).pass_move(mutate=True)
+        ko_delayed_retake = pass_twice.play_move(pc('B9'), mutate=True)
+        expected_position = Position(
+            board=start_board,
+            n=4,
+            komi=6.5,
+            caps=(2, 3),
+            ko=pc('A9'),
+            recent=(
+                PlayerMove(BLACK, pc('A9')),
+                PlayerMove(WHITE, None),
+                PlayerMove(BLACK, None),
+                PlayerMove(WHITE, pc('B9'))),
+            to_play=BLACK,
+        )
+        self.assertEqualPositions(ko_delayed_retake, expected_position)
+
+
 class TestScoring(unittest.TestCase):
     def test_scoring(self):
             board = load_board('''

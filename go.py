@@ -353,13 +353,16 @@ class Position():
         if not self.is_move_legal(c):
             raise IllegalMove("Move at {} is illegal: \n{}".format(c, self))
 
+        # check must be done before potentially mutating the board
+        potential_ko = is_koish(self.board, c)
+
         place_stones(pos.board, color, [c])
         captured_stones = pos.lib_tracker.add_stone(color, c)
         place_stones(pos.board, EMPTY, captured_stones)
 
         opp_color = color * -1
 
-        if len(captured_stones) == 1 and is_koish(self.board, c) == opp_color:
+        if len(captured_stones) == 1 and potential_ko == opp_color:
             new_ko = list(captured_stones)[0]
         else:
             new_ko = None
