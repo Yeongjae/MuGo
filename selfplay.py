@@ -11,7 +11,7 @@ net.initialize_variables('/Users/brilee/dev/MuGo/saved_models/20170718')
 now = time.time()
 
 
-positions = [go.Position(to_play=go.BLACK if i%2 == 0 else go.WHITE) for i in range(2)]
+positions = [go.Position(to_play=go.WHITE) for i in range(1)]
 # neural net 1 always plays "black", and variety is accomplished by
 # letting white play first half the time.
 strategies.simulate_many_games(net, net, positions)
